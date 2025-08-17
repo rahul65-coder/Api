@@ -1,62 +1,55 @@
-import os
-import json
-import time
-import threading
+from flask import Flask
 import requests
-from datetime import datetime, timedelta
-from flask import Flask, Response
+import time
+from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, db
+import os
 
-# 🔐 Firebase credentials from ENV
-firebase_key_json = os.environ.get("FIREBASE_KEY")
-firebase_key_dict = json.loads(firebase_key_json)
-
-# 🔌 Firebase init
-cred = credentials.Certificate(firebase_key_dict)
-firebase_admin.initialize_app(cred, {
-    'databaseURL': 'https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app'
-})
-
-ref = db.reference("api_data")
-
-API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36"
-}
-
-# Flask app
 app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return "✅ Satta fetcher running!"
+# ✅ Firebase Setup
+try:
+    cred = credentials.Certificate("serviceAccountKey.json")
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': 'https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app'
+    })
+    ref = db.reference("satta")
+    print("✅ Firebase initialized.")
+except Exception as e:
+    print("❌ Firebase initialization error:", e)
 
-@app.route("/test")
-def test():
-    log_lines = []  # Collect output for browser
+# 🧠 API URL
+API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
-    def log(msg):
-        print(msg)           # Print in console (Render logs)
-        log_lines.append(msg)  # Save for browser response
+def get_size_label(number):
+    return "SMALL" if number <= 4 else "BIG"
 
-    log("\n🚀 /test route triggered...")
-
+def fetch_and_save():
+    logs = []
     try:
-        response = requests.get(API_URL, headers=HEADERS)
-        log(f"🌐 API Status Code: {response.status_code}")
+        response = requests.get(API_URL, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+        })
+
+        logs.append(f"🌐 API status: {response.status_code}")
+        if response.status_code != 200:
+            logs.append("❌ Invalid response from API")
+            return "\n".join(logs)
 
         data = response.json()
-        items = data["data"]["list"][:10]
-        log(f"📦 Items fetched: {len(items)}")
+        items = data.get("data", {}).get("list", [])[:10]
+        logs.append(f"📦 Total Items Fetched: {len(items)}")
 
         for item in items:
-            issue = str(item.get("issueNumber"))
+            issue = str(item.get("issueNumber", "")).replace("-", "").strip()
             number = int(item.get("number", -1))
+            if number == -1:
+                logs.append(f"⚠️ Invalid number in item: {item}")
+                continue
+
             size = get_size_label(number)
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            log(f"🔍 Issue: {issue}, Number: {number}, Size: {size}")
 
             if ref.child(issue).get() is None:
                 ref.child(issue).set({
@@ -64,41 +57,30 @@ def test():
                     "type": size,
                     "timestamp": timestamp
                 })
-                log(f"✅ Saved: {issue} → {number} ({size}) @ {timestamp}")
+                logs.append(f"✅ Saved: {issue} → {number} ({size}) @ {timestamp}")
             else:
-                log(f"⚠️ Skipped (exists): {issue}")
+                logs.append(f"⚠️ Skipped (already exists): {issue}")
 
     except Exception as e:
-        error_msg = f"❌ ERROR: {str(e)}"
-        log(error_msg)
+        logs.append(f"❌ Error: {str(e)}")
 
-    return Response("<br>".join(log_lines), mimetype='text/html')
+    return "\n".join(logs)
 
-def get_size_label(number):
-    return "SMALL" if number <= 4 else "BIG"
 
-def wait_until_next_minute():
-    now = datetime.now()
-    next_minute = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
-    time.sleep((next_minute - now).total_seconds())
+@app.route('/')
+def index():
+    return '<h1>Satta Running</h1><p>Use /run to fetch results.</p>'
 
-def background_loop():
-    while True:
-        fetch_and_save()
-        wait_until_next_minute()
+@app.route('/run')
+def run_fetcher():
+    print("🚀 /run endpoint hit!")
+    output = fetch_and_save()
+    print("🧾 Log Output:\n", output)
+    return f"<pre>{output}</pre>"
 
-def fetch_and_save():
-    try:
-        response = requests.get(API_URL, headers=HEADERS)
-        data = response.json()
-        items = data["data"]["list"][:10]
 
-        for item in items:
-            issue = str(item.get("issueNumber"))
-            number = int(item.get("number", -1))
-            size = get_size_label(number)
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
+if __name__ == "__main__":
+    app.run(debug=True)
             if ref.child(issue).get() is None:
                 ref.child(issue).set({
                     "result_number": number,
