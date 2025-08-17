@@ -1,16 +1,18 @@
 import os
 import json
 import time
+import threading
 import requests
 from datetime import datetime, timedelta
+from flask import Flask
 import firebase_admin
 from firebase_admin import credentials, db
 
-# 🔐 Load Firebase Key from Environment Variable
+# 🔐 Firebase credentials from env
 firebase_key_json = os.environ.get("FIREBASE_KEY")
 firebase_key_dict = json.loads(firebase_key_json)
 
-# 🧠 Firebase Config
+# 🔌 Initialize Firebase
 cred = credentials.Certificate(firebase_key_dict)
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app'
@@ -23,6 +25,13 @@ API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36"
 }
+
+# 📌 Flask app
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "✅ Satta result fetcher is running!", 200
 
 def get_size_label(number):
     return "SMALL" if number <= 4 else "BIG"
@@ -57,10 +66,16 @@ def wait_until_next_minute():
     next_minute = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
     time.sleep((next_minute - now).total_seconds())
 
-def run_loop():
+def background_loop():
     while True:
         fetch_and_save()
         wait_until_next_minute()
 
+# 🚀 Start Flask + background thread
 if __name__ == "__main__":
-    run_loop()
+    t = threading.Thread(target=background_loop)
+    t.daemon = True
+    t.start()
+
+    port = int(os.environ.get("PORT", 10000))  # Render assigns PORT
+    app.run(host="0.0.0.0", port=port)
