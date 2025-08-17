@@ -18,7 +18,7 @@ firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://web-admin-e297c-default-rtdb.asia-southeast1.firebasedatabase.app'
 })
 
-ref = db.reference("satta_results")
+ref = db.reference("api_data")
 
 API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 HEADERS = {
