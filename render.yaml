@@ -1,6 +1,7 @@
 services:
-  - type: worker
-    name: satta-fetcher
+  - type: web
+    name: satta-fetcher-web
     env: python
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python main.py"
+    plan: free
